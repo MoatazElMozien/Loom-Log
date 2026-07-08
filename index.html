@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Loom Log</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#1B1D1F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Loom Log">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" href="/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#1B1D1F;
+    --panel:#232628;
+    --panel-2:#2B2E31;
+    --border:#3A3D40;
+    --text:#EDEAE3;
+    --text-dim:#9A9D9F;
+    --amber:#E8A33D;
+    --teal:#5FA8A0;
+    --rust:#C1502E;
+    --radius:8px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    padding:14px;
+    min-height:100vh;
+  }
+  .wrap{max-width:900px;margin:0 auto;}
+
+  .header{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-bottom:16px;
+    border-bottom:1px solid var(--border);
+    padding-bottom:14px;
+  }
+  .brand{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:23px;
+    letter-spacing:-0.02em;
+    display:flex;
+    align-items:center;
+    gap:9px;
+  }
+  .brand .spool{
+    width:20px;height:20px;
+    border-radius:50%;
+    border:3px solid var(--amber);
+    border-top-color:var(--teal);
+    display:inline-block;
+    flex-shrink:0;
+  }
+  .subtitle{font-size:11.5px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;margin-top:4px;line-height:1.5;}
+  button.export-btn{
+    background:transparent;border:1px solid var(--border);color:var(--text-dim);
+    padding:10px 14px;border-radius:6px;font-size:12.5px;cursor:pointer;font-family:'Inter',sans-serif;
+    min-height:40px;
+  }
+
+  .tabs{display:flex;gap:7px;margin-bottom:14px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;}
+  .tab{
+    position:relative;flex-shrink:0;
+    padding:10px 14px 9px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    cursor:pointer;
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:13.5px;
+    color:var(--text-dim);
+    overflow:hidden;
+    white-space:nowrap;
+    display:flex;align-items:center;
+  }
+  .tab::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--border);}
+  .tab.active{color:var(--text);background:var(--panel-2);border-color:var(--amber);}
+  .tab.status-good::before{background:var(--teal);}
+  .tab.status-warn::before{background:var(--amber);}
+  .tab.status-bad::before{background:var(--rust);}
+  .tab .rm{margin-left:9px;color:var(--text-dim);font-size:13px;padding:2px;}
+  .tab .rm:hover{color:var(--rust);}
+  .add-line{
+    flex-shrink:0;padding:10px 14px;background:transparent;border:1px dashed var(--border);
+    border-radius:var(--radius);color:var(--text-dim);cursor:pointer;font-family:'Inter',sans-serif;font-size:13px;white-space:nowrap;
+  }
+  .add-line:hover{border-color:var(--amber);color:var(--amber);}
+
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;}
+  .panel h2{
+    font-family:'Space Grotesk',sans-serif;font-size:12.5px;text-transform:uppercase;letter-spacing:0.08em;
+    color:var(--text-dim);margin:0 0 13px;display:flex;align-items:center;gap:8px;
+  }
+  .panel h2::after{content:'';flex:1;height:1px;background:var(--border);}
+
+  .grid{display:grid;gap:11px;}
+  .grid.cfg{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));align-items:end;}
+  .grid.entry{grid-template-columns:1fr 1fr;}
+  @media(min-width:520px){ .grid.entry{grid-template-columns:repeat(4,1fr);} }
+
+  label{display:block;font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;}
+  input,select{
+    width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+    padding:11px 10px;border-radius:5px;font-family:'IBM Plex Mono',monospace;font-size:15px;
+    min-height:44px;
+  }
+  select{font-family:'Inter',sans-serif;font-size:14px;}
+  input:focus,select:focus{outline:none;border-color:var(--amber);}
+  input::placeholder{color:#5c5f61;font-size:13px;}
+
+  .field-full{grid-column:1/-1;}
+  .quickset{display:flex;gap:6px;margin-top:6px;}
+  .quickset button{
+    flex:1;background:var(--panel-2);border:1px solid var(--border);color:var(--text-dim);
+    padding:7px 4px;border-radius:4px;font-size:11px;cursor:pointer;font-family:'IBM Plex Mono',monospace;
+  }
+  .quickset button:hover{border-color:var(--amber);color:var(--amber);}
+
+  .reason-row{display:flex;gap:7px;}
+  .reason-row select{flex:1;}
+  .reason-row button{
+    flex-shrink:0;background:var(--panel-2);border:1px solid var(--border);color:var(--text-dim);
+    padding:0 14px;border-radius:5px;font-size:18px;cursor:pointer;min-height:44px;
+  }
+  .reason-row button:hover{border-color:var(--amber);color:var(--amber);}
+  .new-reason-box{display:none;gap:7px;margin-top:8px;}
+  .new-reason-box.show{display:flex;}
+  .new-reason-box input{flex:1;}
+  .new-reason-box button{
+    flex-shrink:0;background:var(--amber);color:#1B1D1F;border:none;border-radius:5px;
+    padding:0 16px;font-weight:600;font-size:13px;cursor:pointer;min-height:44px;
+  }
+
+  .preview{
+    margin-top:12px;padding:10px 12px;background:var(--panel-2);border-radius:5px;
+    font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-dim);
+    display:flex;flex-wrap:wrap;gap:12px;
+  }
+  .preview b{color:var(--text);}
+
+  button.primary{
+    background:var(--amber);color:#1B1D1F;border:none;padding:13px 18px;border-radius:6px;
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;cursor:pointer;width:100%;
+    min-height:46px;margin-top:12px;
+  }
+  button.primary:hover{background:#f2b458;}
+
+  .summary{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:14px;}
+  @media(min-width:600px){ .summary{grid-template-columns:repeat(4,1fr);} }
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;}
+  .card .label{font-size:9.5px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-dim);margin-bottom:5px;}
+  .card .value{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:600;}
+  .card .value.teal{color:var(--teal);}
+  .card .value.amber{color:var(--amber);}
+  .card .value.rust{color:var(--rust);}
+
+  .dt-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11.5px;}
+  .dt-row .name{width:130px;color:var(--text-dim);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .dt-row .bar-bg{flex:1;height:8px;background:var(--panel-2);border-radius:4px;overflow:hidden;}
+  .dt-row .bar-fill{height:100%;background:var(--rust);}
+  .dt-row .mins{width:50px;text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--text-dim);flex-shrink:0;}
+
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+  .count{font-size:11px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;}
+
+  .entry-card{padding:12px 4px;border-bottom:1px solid var(--panel-2);}
+  .entry-card:last-child{border-bottom:none;}
+  .ec-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .ec-time{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;}
+  .ec-date{color:var(--text-dim);font-size:11px;font-family:'IBM Plex Mono',monospace;margin-left:6px;}
+  .ec-pills{display:flex;gap:5px;}
+  .eff-pill{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;font-family:'IBM Plex Mono',monospace;}
+  .eff-pill.good{background:rgba(95,168,160,0.15);color:var(--teal);}
+  .eff-pill.warn{background:rgba(232,163,61,0.15);color:var(--amber);}
+  .eff-pill.bad{background:rgba(193,80,46,0.15);color:var(--rust);}
+  .del-btn{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;padding:4px 8px;}
+  .del-btn:hover{color:var(--rust);}
+  .ec-metrics{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px;
+  }
+  @media(min-width:480px){ .ec-metrics{grid-template-columns:repeat(6,1fr);} }
+  .ec-metric .l{font-size:9px;text-transform:uppercase;color:var(--text-dim);letter-spacing:0.04em;}
+  .ec-metric .v{font-family:'IBM Plex Mono',monospace;font-size:13px;}
+  .ec-reason{font-size:11.5px;color:var(--amber);margin-top:2px;}
+  .ec-notes{font-size:11.5px;color:var(--text-dim);margin-top:2px;font-style:italic;}
+  .empty{color:var(--text-dim);font-size:12px;padding:24px 0;text-align:center;font-family:'IBM Plex Mono',monospace;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div>
+      <div class="brand"><span class="spool"></span>LOOM LOG</div>
+      <div class="subtitle" id="subtitleLine">— loading —</div>
+    </div>
+    <button class="export-btn" id="exportBtn">Export CSV</button>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="panel">
+    <h2>Line Setup</h2>
+    <div class="grid cfg">
+      <div class="field-full" style="grid-column:1/-1;"><label>Line Name</label><input id="cfgName" placeholder="e.g. Sewing Line 3"></div>
+      <div><label>Default Operators</label><input id="cfgManpower" type="number" min="0" placeholder="e.g. 24"></div>
+      <div><label>Default SMV</label><input id="cfgSmv" type="number" step="0.01" min="0" placeholder="e.g. 0.85"></div>
+      <div style="grid-column:1/-1;"><button class="primary" id="saveCfgBtn" style="margin-top:2px;">Save Config</button></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>New Hourly Entry</h2>
+    <div class="grid entry">
+      <div><label>Date</label><input id="eDate" type="date"></div>
+      <div><label>Time</label><input id="eTime" type="time"></div>
+      <div>
+        <label>Log Time (min)</label>
+        <input id="eLogTime" type="number" min="1" value="60">
+        <div class="quickset">
+          <button type="button" data-val="60">60 min</button>
+          <button type="button" data-val="25">25 min</button>
+        </div>
+      </div>
+      <div><label>Operators</label><input id="eOperators" type="number" min="0"></div>
+      <div><label>SMV</label><input id="eSmv" type="number" step="0.01" min="0"></div>
+      <div><label>Target Production</label><input id="eTarget" type="number" min="0" placeholder="pcs"></div>
+      <div><label>Actual Production</label><input id="eActual" type="number" min="0" placeholder="pcs"></div>
+      <div><label>Lost Pieces <span style="opacity:.6;">(auto)</span></label><input id="eLostPieces" type="number" min="0" placeholder="0" readonly style="opacity:.75;cursor:not-allowed;"></div>
+
+      <div class="field-full">
+        <label>Downtime Reason</label>
+        <div class="reason-row">
+          <select id="eReason"></select>
+          <button type="button" id="newReasonToggle" title="Add custom reason">+</button>
+        </div>
+        <div class="new-reason-box" id="newReasonBox">
+          <input id="newReasonInput" placeholder="Type new reason...">
+          <button type="button" id="confirmReasonBtn">Add</button>
+        </div>
+      </div>
+
+      <div class="field-full"><label>Notes (optional)</label><input id="eNotes" placeholder="short note..."></div>
+    </div>
+
+    <div class="preview" id="preview"></div>
+
+    <button class="primary" id="addEntryBtn">Add Entry</button>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <div class="panel" id="dtPanel">
+    <h2>Downtime Breakdown</h2>
+    <div id="dtBreakdown"></div>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <h2 style="margin:0;">Entry Log</h2>
+    </div>
+    <span class="count" id="entryCount"></span>
+    <div id="logList"></div>
+    <div class="empty" id="emptyMsg" style="display:none;">No entries yet — add your first hour above.</div>
+  </div>
+
+</div>
+
+<script>
+// Standalone storage shim backed by real browser localStorage (this app runs
+// outside the Claude artifact host, so it uses its own persistence layer).
+window.storage = {
+  async get(key){
+    const v = localStorage.getItem('loomlog:' + key);
+    return v !== null ? { key, value: v } : null;
+  },
+  async set(key, value){
+    localStorage.setItem('loomlog:' + key, value);
+    return { key, value };
+  },
+  async delete(key){
+    localStorage.removeItem('loomlog:' + key);
+    return { key, deleted: true };
+  },
+  async list(prefix){
+    const keys = Object.keys(localStorage)
+      .filter(k => k.startsWith('loomlog:' + (prefix||'')))
+      .map(k => k.replace('loomlog:',''));
+    return { keys };
+  }
+};
+</script>
+<script>
+const DEFAULT_REASONS = [
+  'Machine Breakdown','Power Cut / No Electricity','Thread Break','Needle Break',
+  'Fabric / Material Shortage','Quality Issue / Rework','Style Changeover',
+  'No Operator / Absenteeism','Maintenance','Other'
+];
+
+let state = { lines: [], activeId: null };
+
+function uid(){ return 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function defaultLine(name){
+  return { id: uid(), name: name || 'Line 1', manpower: 20, smv: 1, customReasons: [], entries: [] };
+}
+
+async function loadState(){
+  try{
+    const idx = await window.storage.get('lines-index');
+    const ids = idx ? JSON.parse(idx.value) : null;
+    if(!ids || !ids.length){
+      const l = defaultLine('Line 1');
+      state.lines = [l]; state.activeId = l.id;
+      await persistLine(l); await persistIndex();
+    } else {
+      const lines = [];
+      for(const id of ids){
+        try{
+          const res = await window.storage.get('line:' + id);
+          if(res) lines.push(JSON.parse(res.value));
+        }catch(e){}
+      }
+      if(!lines.length){
+        const l = defaultLine('Line 1'); lines.push(l); await persistLine(l);
+      }
+      lines.forEach(l => { if(!l.customReasons) l.customReasons = []; });
+      state.lines = lines;
+      state.activeId = lines[0].id;
+    }
+  }catch(e){
+    console.error('Load failed', e);
+    const l = defaultLine('Line 1');
+    state.lines = [l]; state.activeId = l.id;
+  }
+  render();
+}
+
+async function persistIndex(){
+  try{ await window.storage.set('lines-index', JSON.stringify(state.lines.map(l => l.id)), false); }
+  catch(e){ console.error('Index save failed', e); }
+}
+async function persistLine(line){
+  try{ await window.storage.set('line:' + line.id, JSON.stringify(line), false); }
+  catch(e){ console.error('Line save failed', e); }
+}
+async function deleteLineStorage(id){
+  try{ await window.storage.delete('line:' + id, false); }catch(e){}
+}
+
+function activeLine(){ return state.lines.find(l => l.id === state.activeId); }
+
+function effColor(pct){
+  if(pct === null || pct === undefined) return '';
+  if(pct >= 90) return 'good';
+  if(pct >= 75) return 'warn';
+  return 'bad';
+}
+function lineStatusClass(line){
+  if(!line.entries.length) return '';
+  const last = [...line.entries].sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time) || a.createdAt-b.createdAt).pop();
+  const c = effColor(last.effSmv);
+  return c === 'good' ? 'status-good' : c === 'warn' ? 'status-warn' : 'status-bad';
+}
+
+function calcFields(target, actual, lostPieces, logTime, operators, smv){
+  const lostMinutes = target > 0 ? (lostPieces / target) * logTime : 0;
+  const downtime = lostPieces * smv;
+  const effSmv = (logTime && operators) ? (actual * smv) / (logTime * operators) * 100 : null;
+  const effTarget = target > 0 ? (actual / target) * 100 : null;
+  return { lostMinutes, downtime, effSmv, effTarget };
+}
+
+function reasonList(line){
+  const merged = [...DEFAULT_REASONS];
+  line.customReasons.forEach(r => { if(!merged.includes(r)) merged.push(r); });
+  return merged;
+}
+
+function populateReasonSelect(selectedVal){
+  const line = activeLine();
+  const sel = document.getElementById('eReason');
+  const list = reasonList(line);
+  sel.innerHTML = '<option value="">— none —</option>' + list.map(r => `<option${r===selectedVal?' selected':''}>${escapeHtml(r)}</option>`).join('');
+}
+
+function renderTabs(){
+  const tabs = document.getElementById('tabs');
+  tabs.innerHTML = '';
+  state.lines.forEach(line => {
+    const tab = document.createElement('div');
+    tab.className = 'tab ' + (line.id === state.activeId ? 'active ' : '') + lineStatusClass(line);
+    tab.innerHTML = `${escapeHtml(line.name)}<span class="rm" data-id="${line.id}">✕</span>`;
+    tab.addEventListener('click', (e) => {
+      if(e.target.classList.contains('rm')) return;
+      state.activeId = line.id;
+      render();
+    });
+    tab.querySelector('.rm').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if(state.lines.length === 1){ alert("Can't delete the last line."); return; }
+      if(!confirm(`Delete "${line.name}" and all its entries?`)) return;
+      await deleteLineStorage(line.id);
+      state.lines = state.lines.filter(l => l.id !== line.id);
+      if(state.activeId === line.id) state.activeId = state.lines[0].id;
+      await persistIndex();
+      render();
+    });
+    tabs.appendChild(tab);
+  });
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-line';
+  addBtn.textContent = '+ Add Line';
+  addBtn.addEventListener('click', async () => {
+    const l = defaultLine('Line ' + (state.lines.length + 1));
+    state.lines.push(l); state.activeId = l.id;
+    await persistLine(l); await persistIndex();
+    render();
+  });
+  tabs.appendChild(addBtn);
+}
+
+function renderConfig(){
+  const line = activeLine();
+  document.getElementById('subtitleLine').textContent = `${line.name} — ${line.manpower} operators default · SMV ${line.smv} default`;
+  document.getElementById('cfgName').value = line.name;
+  document.getElementById('cfgManpower').value = line.manpower;
+  document.getElementById('cfgSmv').value = line.smv;
+  // populate entry defaults only if fields are empty (don't clobber active typing across re-renders)
+  const opField = document.getElementById('eOperators');
+  const smvField = document.getElementById('eSmv');
+  if(!opField.value) opField.value = line.manpower;
+  if(!smvField.value) smvField.value = line.smv;
+  populateReasonSelect(document.getElementById('eReason').value);
+}
+
+function renderSummary(){
+  const line = activeLine();
+  const entries = line.entries;
+  const summary = document.getElementById('summary');
+  if(!entries.length){ summary.innerHTML = ''; return; }
+  const totalTarget = entries.reduce((s,e)=>s+e.target,0);
+  const totalActual = entries.reduce((s,e)=>s+e.actual,0);
+  const totalLostPieces = entries.reduce((s,e)=>s+e.lostPieces,0);
+  const totalLostMin = entries.reduce((s,e)=>s+e.lostMinutes,0);
+  const totalDowntime = entries.reduce((s,e)=>s+e.downtime,0);
+  const validSmv = entries.filter(e=>e.effSmv !== null);
+  const validTgt = entries.filter(e=>e.effTarget !== null);
+  const avgSmv = validSmv.length ? validSmv.reduce((s,e)=>s+e.effSmv,0)/validSmv.length : null;
+  const avgTgt = validTgt.length ? validTgt.reduce((s,e)=>s+e.effTarget,0)/validTgt.length : null;
+
+  const cards = [
+    ['Total Target', totalTarget.toLocaleString(), ''],
+    ['Total Actual', totalActual.toLocaleString(), ''],
+    ['Avg Eff. (SMV)', avgSmv !== null ? avgSmv.toFixed(1)+'%' : '—', effColor(avgSmv)],
+    ['Avg Eff. (Target)', avgTgt !== null ? avgTgt.toFixed(1)+'%' : '—', effColor(avgTgt)],
+    ['Lost Pieces', totalLostPieces.toLocaleString(), totalLostPieces>0?'bad':''],
+    ['Lost Minutes', totalLostMin.toFixed(0), totalLostMin>0?'bad':''],
+    ['Downtime (min)', totalDowntime.toFixed(0), totalDowntime>0?'bad':''],
+  ];
+  summary.innerHTML = cards.map(([label,val,color])=>`
+    <div class="card">
+      <div class="label">${label}</div>
+      <div class="value ${color==='good'?'teal':color==='warn'?'amber':color==='bad'?'rust':''}">${val}</div>
+    </div>
+  `).join('');
+}
+
+function renderDowntime(){
+  const line = activeLine();
+  const dtPanel = document.getElementById('dtPanel');
+  const withReason = line.entries.filter(e => e.reason && e.downtime > 0);
+  if(!withReason.length){ dtPanel.style.display = 'none'; document.getElementById('dtBreakdown').innerHTML=''; return; }
+  dtPanel.style.display = 'block';
+  const totals = {};
+  withReason.forEach(e => { totals[e.reason] = (totals[e.reason]||0) + e.downtime; });
+  const max = Math.max(...Object.values(totals));
+  const sorted = Object.entries(totals).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('dtBreakdown').innerHTML = sorted.map(([reason,mins]) => `
+    <div class="dt-row">
+      <div class="name">${escapeHtml(reason)}</div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${(mins/max*100).toFixed(0)}%"></div></div>
+      <div class="mins">${mins.toFixed(1)}m</div>
+    </div>
+  `).join('');
+}
+
+function renderLog(){
+  const line = activeLine();
+  const list = document.getElementById('logList');
+  const empty = document.getElementById('emptyMsg');
+  const sorted = [...line.entries].sort((a,b)=> (b.date+b.time).localeCompare(a.date+a.time) || b.createdAt - a.createdAt);
+  document.getElementById('entryCount').textContent = `${line.entries.length} entr${line.entries.length===1?'y':'ies'}`;
+  if(!sorted.length){ list.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display = 'none';
+  list.innerHTML = sorted.map(e => `
+    <div class="entry-card">
+      <div class="ec-top">
+        <div><span class="ec-time">${e.time||'—'}</span><span class="ec-date">${e.date||''}</span></div>
+        <div style="display:flex;align-items:center;gap:4px;">
+          <div class="ec-pills">
+            ${e.effSmv!==null?`<span class="eff-pill ${effColor(e.effSmv)}">${e.effSmv.toFixed(1)}%</span>`:''}
+            ${e.effTarget!==null?`<span class="eff-pill ${effColor(e.effTarget)}">${e.effTarget.toFixed(1)}%</span>`:''}
+          </div>
+          <button class="del-btn" data-id="${e.id}">✕</button>
+        </div>
+      </div>
+      <div class="ec-metrics">
+        <div class="ec-metric"><div class="l">Target</div><div class="v">${e.target}</div></div>
+        <div class="ec-metric"><div class="l">Actual</div><div class="v">${e.actual}</div></div>
+        <div class="ec-metric"><div class="l">Lost Pcs</div><div class="v">${e.lostPieces > 0 ? e.lostPieces : '—'}</div></div>
+        <div class="ec-metric"><div class="l">Lost Min</div><div class="v">${e.lostMinutes > 0 ? e.lostMinutes.toFixed(1) : '—'}</div></div>
+        <div class="ec-metric"><div class="l">Downtime</div><div class="v">${e.downtime > 0 ? e.downtime.toFixed(1) : '—'}</div></div>
+        <div class="ec-metric"><div class="l">Ops / SMV</div><div class="v">${e.operators}/${e.smv}</div></div>
+      </div>
+      ${e.reason ? `<div class="ec-reason">⚠ ${escapeHtml(e.reason)}</div>` : ''}
+      ${e.notes ? `<div class="ec-notes">${escapeHtml(e.notes)}</div>` : ''}
+    </div>
+  `).join('');
+  list.querySelectorAll('.del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const line = activeLine();
+      line.entries = line.entries.filter(e => e.id !== btn.dataset.id);
+      await persistLine(line);
+      render();
+    });
+  });
+}
+
+function updateLostPieces(){
+  const target = parseFloat(document.getElementById('eTarget').value) || 0;
+  const actual = parseFloat(document.getElementById('eActual').value) || 0;
+  const lostPieces = Math.max(target - actual, 0);
+  document.getElementById('eLostPieces').value = lostPieces;
+  return lostPieces;
+}
+
+function updatePreview(){
+  const target = parseFloat(document.getElementById('eTarget').value) || 0;
+  const actual = parseFloat(document.getElementById('eActual').value) || 0;
+  const lostPieces = updateLostPieces();
+  const logTime = parseFloat(document.getElementById('eLogTime').value) || 0;
+  const operators = parseFloat(document.getElementById('eOperators').value) || 0;
+  const smv = parseFloat(document.getElementById('eSmv').value) || 0;
+  const { lostMinutes, downtime, effSmv, effTarget } = calcFields(target, actual, lostPieces, logTime, operators, smv);
+  const noLoss = lostPieces === 0 && (target > 0 || actual > 0);
+  document.getElementById('preview').innerHTML = `
+    ${noLoss ? `<span style="color:var(--teal);">✓ Target met — no loss this hour</span>` : `
+    <span>Lost Min: <b>${lostMinutes.toFixed(1)}</b></span>
+    <span>Downtime: <b>${downtime.toFixed(1)} min</b></span>
+    `}
+    <span>Eff (SMV): <b>${effSmv!==null?effSmv.toFixed(1)+'%':'—'}</b></span>
+    <span>Eff (Target): <b>${effTarget!==null?effTarget.toFixed(1)+'%':'—'}</b></span>
+  `;
+}
+
+function render(){
+  renderTabs();
+  renderConfig();
+  renderSummary();
+  renderDowntime();
+  renderLog();
+  updatePreview();
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Config save
+document.getElementById('saveCfgBtn').addEventListener('click', async () => {
+  const line = activeLine();
+  const name = document.getElementById('cfgName').value.trim();
+  const manpower = parseFloat(document.getElementById('cfgManpower').value) || 0;
+  const smv = parseFloat(document.getElementById('cfgSmv').value) || 0;
+  line.name = name || line.name;
+  line.manpower = manpower;
+  line.smv = smv;
+  await persistLine(line);
+  await persistIndex();
+  render();
+});
+
+// Log time quickset
+document.querySelectorAll('.quickset button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('eLogTime').value = btn.dataset.val;
+    updatePreview();
+  });
+});
+
+// Custom reason toggle
+document.getElementById('newReasonToggle').addEventListener('click', () => {
+  document.getElementById('newReasonBox').classList.toggle('show');
+  document.getElementById('newReasonInput').focus();
+});
+document.getElementById('confirmReasonBtn').addEventListener('click', async () => {
+  const val = document.getElementById('newReasonInput').value.trim();
+  if(!val) return;
+  const line = activeLine();
+  if(!line.customReasons.includes(val)) line.customReasons.push(val);
+  await persistLine(line);
+  populateReasonSelect(val);
+  document.getElementById('newReasonInput').value = '';
+  document.getElementById('newReasonBox').classList.remove('show');
+});
+
+// Live preview on input
+['eTarget','eActual','eLogTime','eOperators','eSmv'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updatePreview);
+});
+
+// Add entry
+document.getElementById('addEntryBtn').addEventListener('click', async () => {
+  const line = activeLine();
+  const date = document.getElementById('eDate').value || new Date().toISOString().slice(0,10);
+  const time = document.getElementById('eTime').value;
+  const logTime = parseFloat(document.getElementById('eLogTime').value) || 60;
+  const operators = parseFloat(document.getElementById('eOperators').value) || 0;
+  const smv = parseFloat(document.getElementById('eSmv').value) || 0;
+  const target = parseFloat(document.getElementById('eTarget').value) || 0;
+  const actual = parseFloat(document.getElementById('eActual').value) || 0;
+  const lostPieces = Math.max(target - actual, 0);
+  const reason = document.getElementById('eReason').value;
+  const notes = document.getElementById('eNotes').value.trim();
+
+  if(!target && !actual){ alert('Enter at least a target or actual production value.'); return; }
+  if(!time){ alert('Enter the time for this hourly log.'); return; }
+
+  const { lostMinutes, downtime, effSmv, effTarget } = calcFields(target, actual, lostPieces, logTime, operators, smv);
+
+  const entry = {
+    id: uid(), date, time, logTime, operators, smv,
+    target, actual, lostPieces, lostMinutes, downtime, reason, notes,
+    effSmv, effTarget, createdAt: Date.now()
+  };
+  line.entries.push(entry);
+  await persistLine(line);
+
+  // reset production fields, keep operators/smv/logTime (usually same across hours)
+  ['eTarget','eActual','eNotes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('eReason').value = '';
+  updateLostPieces();
+
+  // auto-advance time by logTime minutes for the next hourly entry
+  const [h,m] = time.split(':').map(Number);
+  const total = h*60 + m + logTime;
+  const nh = Math.floor(total/60) % 24;
+  const nm = total % 60;
+  document.getElementById('eTime').value = `${String(nh).padStart(2,'0')}:${String(nm).padStart(2,'0')}`;
+  document.getElementById('eLogTime').value = 60;
+
+  render();
+});
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const line = activeLine();
+  if(!line.entries.length){ alert('No entries to export yet.'); return; }
+  const headers = ['Date','Time','Log Time (min)','Operators','SMV','Target','Actual','Lost Pieces','Lost Minutes','Downtime (min)','Reason','Notes','Eff SMV %','Eff Target %'];
+  const rows = [...line.entries].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(e => [
+    e.date, e.time, e.logTime, e.operators, e.smv, e.target, e.actual, e.lostPieces,
+    e.lostMinutes.toFixed(2), e.downtime.toFixed(2),
+    `"${(e.reason||'').replace(/"/g,'""')}"`, `"${(e.notes||'').replace(/"/g,'""')}"`,
+    e.effSmv!==null?e.effSmv.toFixed(2):'', e.effTarget!==null?e.effTarget.toFixed(2):''
+  ]);
+  const csv = [headers.join(','), ...rows.map(r=>r.join(','))].join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${line.name.replace(/\s+/g,'_')}_log.csv`; a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('eDate').value = new Date().toISOString().slice(0,10);
+document.getElementById('eTime').value = '08:00';
+
+loadState();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(e => console.warn('SW registration failed', e));
+  });
+}
+
+</script>
+</body>
+</html>
