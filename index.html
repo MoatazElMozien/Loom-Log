@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Loom Log</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#F5F7F6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Loom Log">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" href="/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -40,6 +47,14 @@
   .tab .rm:hover{color:var(--rust);}
   .add-line{flex-shrink:0;padding:10px 14px;background:transparent;border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-dim);cursor:pointer;font-size:13px;white-space:nowrap;}
   .add-line:hover{border-color:var(--teal);color:var(--teal);}
+
+  .nav-bar{display:flex;gap:10px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap;}
+  .day-field{flex:1;min-width:140px;}
+  .day-field label{margin-bottom:5px;}
+  .save-btn{background:var(--teal);color:#1B1D1F;border:none;border-radius:6px;padding:0 18px;min-height:44px;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap;}
+  .save-btn.saved{background:var(--panel-2);color:var(--teal);border:1px solid var(--teal);}
+  .save-btn:disabled{opacity:.75;cursor:not-allowed;}
+  .nav-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.07em;margin:2px 2px 5px;font-family:'Space Grotesk',sans-serif;}
 
   /* Sub navigation */
   .subtabs{display:flex;gap:4px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:4px;margin-bottom:14px;}
@@ -119,13 +134,17 @@
   .del-btn{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;padding:4px 8px;}
   .del-btn:hover{color:var(--rust);}
   .ec-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px;}
-  @media(min-width:480px){ .ec-metrics{grid-template-columns:repeat(6,1fr);} }
+  @media(min-width:480px){ .ec-metrics{grid-template-columns:repeat(7,1fr);} }
   .ec-metric .l{font-size:9px;text-transform:uppercase;color:var(--text-dim);letter-spacing:0.04em;}
   .ec-metric .v{font-family:'IBM Plex Mono',monospace;font-size:13px;}
   .ec-reason{font-size:11.5px;color:var(--amber);margin-top:2px;}
   .ec-notes{font-size:11.5px;color:var(--text-dim);margin-top:2px;font-style:italic;}
   .empty{color:var(--text-dim);font-size:12px;padding:24px 0;text-align:center;font-family:'IBM Plex Mono',monospace;}
   .empty-sm{color:var(--text-dim);font-size:11.5px;padding:10px 0;font-family:'IBM Plex Mono',monospace;}
+
+  .chart-svg{width:100%;height:auto;display:block;}
+  .chart-legend{display:flex;gap:16px;margin-bottom:10px;font-size:11px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;}
+  .chart-legend .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle;}
 
   /* Time Study */
   .style-tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch;}
@@ -191,6 +210,15 @@
     <button class="export-btn" id="exportBtn">Export CSV</button>
   </div>
 
+  <div class="nav-bar">
+    <div class="day-field"><label>Day</label><input id="dayPicker" type="date"></div>
+    <button class="save-btn" id="saveBtn">💾 Save</button>
+  </div>
+
+  <div class="nav-label">Group</div>
+  <div class="tabs" id="groupTabs"></div>
+
+  <div class="nav-label">Line</div>
   <div class="tabs" id="tabs"></div>
 
   <div class="subtabs">
@@ -226,7 +254,6 @@
     <div class="panel">
       <h2>New Hourly Entry</h2>
       <div class="grid entry">
-        <div><label>Date</label><input id="eDate" type="date"></div>
         <div><label>Time</label><input id="eTime" type="time"></div>
         <div>
           <label>Log Time (min)</label>
@@ -248,6 +275,10 @@
       <div class="preview" id="preview"></div>
       <button class="primary" id="addEntryBtn">Add Entry</button>
     </div>
+    <div class="panel" id="chartPanel">
+      <h2>Hourly Output Curve <span class="hint" id="chartHint"></span></h2>
+      <div id="outputChart"></div>
+    </div>
     <div class="panel">
       <div class="toolbar"><h2 style="margin:0;">Entry Log</h2></div>
       <span class="count" id="entryCount"></span>
@@ -268,35 +299,113 @@
 </div>
 
 <script>
+// Standalone storage shim backed by real browser localStorage (this app runs
+// outside the Claude artifact host once deployed, so it uses its own persistence layer).
+window.storage = {
+  async get(key){
+    const v = localStorage.getItem('loomlog:' + key);
+    return v !== null ? { key, value: v } : null;
+  },
+  async set(key, value){
+    localStorage.setItem('loomlog:' + key, value);
+    return { key, value };
+  },
+  async delete(key){
+    localStorage.removeItem('loomlog:' + key);
+    return { key, deleted: true };
+  },
+  async list(prefix){
+    const keys = Object.keys(localStorage)
+      .filter(k => k.startsWith('loomlog:' + (prefix||'')))
+      .map(k => k.replace('loomlog:',''));
+    return { keys };
+  }
+};
+</script>
+<script>
 const DEFAULT_REASONS = ['Machine Breakdown','Power Cut / No Electricity','Thread Break','Needle Break','Fabric / Material Shortage','Quality Issue / Rework','Style Changeover','No Operator / Absenteeism','Maintenance','Other'];
-let state = { lines: [], activeId: null };
-let ui = { subtab: 'dashboard', activeStyleId: null, openTimerProcessId: null };
+let state = { lines: [], groups: [], activeId: null, activeGroupId: null };
+let ui = { subtab: 'dashboard', activeStyleId: null, openTimerProcessId: null, day: new Date().toISOString().slice(0,10) };
 let timerSession = null; // { processId, tolerance, allowancePct, readings:[], running, startedAt, lastLapAt }
 let timerInterval = null;
 
 function uid(p){ return (p||'ID') + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function defaultLine(name){ return { id: uid('L'), name: name||'Line 1', manpower:20, smv:1, customReasons:[], entries:[], styles:[] }; }
+function defaultGroup(name, lineIds){ return { id: uid('G'), name: name||'Group 1', lineIds: lineIds||[] }; }
+function dayEntries(line){ return line.entries.filter(e => e.date === ui.day); }
+function activeGroup(){ return state.groups.find(g=>g.id===state.activeGroupId); }
+function pickFirstLineInGroup(groupId){
+  const g = state.groups.find(x=>x.id===groupId);
+  if(!g || !g.lineIds.length) return state.lines[0] ? state.lines[0].id : null;
+  const found = g.lineIds.find(id => state.lines.some(l=>l.id===id));
+  return found || (state.lines[0] ? state.lines[0].id : null);
+}
 
 async function loadState(){
   try{
-    const idx = await window.storage.get('lines-index');
-    const ids = idx ? JSON.parse(idx.value) : null;
-    if(!ids || !ids.length){
-      const l = defaultLine('Line 1');
-      state.lines=[l]; state.activeId=l.id;
-      await persistLine(l); await persistIndex();
-    } else {
-      const lines = [];
-      for(const id of ids){ try{ const res = await window.storage.get('line:'+id); if(res) lines.push(JSON.parse(res.value)); }catch(e){} }
-      if(!lines.length){ const l=defaultLine('Line 1'); lines.push(l); await persistLine(l); }
-      lines.forEach(l => { if(!l.customReasons) l.customReasons=[]; if(!l.styles) l.styles=[]; });
-      state.lines = lines; state.activeId = lines[0].id;
+    // --- lines ---
+    const lineIdx = await window.storage.get('lines-index');
+    let lineIds = lineIdx ? JSON.parse(lineIdx.value) : [];
+    let lines = [];
+    for(const id of lineIds){ try{ const res = await window.storage.get('line:'+id); if(res) lines.push(JSON.parse(res.value)); }catch(e){} }
+    if(!lines.length){ const l = defaultLine('Line 1'); lines = [l]; await persistLine(l); }
+    lines.forEach(l => { if(!l.customReasons) l.customReasons=[]; if(!l.styles) l.styles=[]; });
+    state.lines = lines;
+
+    // --- groups ---
+    const groupIdx = await window.storage.get('groups-index');
+    let groupIds = groupIdx ? JSON.parse(groupIdx.value) : [];
+    let groups = [];
+    for(const id of groupIds){ try{ const res = await window.storage.get('group:'+id); if(res) groups.push(JSON.parse(res.value)); }catch(e){} }
+
+    // reconcile: any line not claimed by a group gets parked somewhere safe (never lost)
+    const referenced = new Set();
+    groups.forEach(g => g.lineIds.forEach(id => referenced.add(id)));
+    const orphanIds = state.lines.map(l=>l.id).filter(id => !referenced.has(id));
+    if(!groups.length){
+      const g = defaultGroup('Group 1', state.lines.map(l=>l.id));
+      groups = [g];
+      await persistGroup(g);
+    } else if(orphanIds.length){
+      let ungrouped = groups.find(g => g.name === 'Ungrouped');
+      if(!ungrouped){ ungrouped = defaultGroup('Ungrouped', []); groups.push(ungrouped); }
+      ungrouped.lineIds.push(...orphanIds);
+      await persistGroup(ungrouped);
     }
-  }catch(e){ console.error(e); const l=defaultLine('Line 1'); state.lines=[l]; state.activeId=l.id; }
-  ui.activeStyleId = state.lines[0].styles[0] ? state.lines[0].styles[0].id : null;
+    state.groups = groups;
+    await persistGroupsIndex();
+  }catch(e){
+    console.error('Load failed', e);
+    const l = defaultLine('Line 1'); const g = defaultGroup('Group 1', [l.id]);
+    state.lines=[l]; state.groups=[g];
+  }
+
+  state.activeGroupId = state.groups[0] ? state.groups[0].id : null;
+  state.activeId = pickFirstLineInGroup(state.activeGroupId);
+  await restoreNavState();
+  if(!state.lines.some(l=>l.id===state.activeId)) state.activeId = pickFirstLineInGroup(state.activeGroupId);
+
+  ui.activeStyleId = activeLine() && activeLine().styles[0] ? activeLine().styles[0].id : null;
   syncEntryDefaults();
   render();
 }
+async function restoreNavState(){
+  try{
+    const res = await window.storage.get('nav-state');
+    if(!res) return;
+    const nav = JSON.parse(res.value);
+    if(nav.activeGroupId && state.groups.find(g=>g.id===nav.activeGroupId)) state.activeGroupId = nav.activeGroupId;
+    if(nav.activeId && state.lines.find(l=>l.id===nav.activeId)) state.activeId = nav.activeId;
+    if(nav.day) ui.day = nav.day;
+    if(nav.subtab) ui.subtab = nav.subtab;
+  }catch(e){}
+}
+async function persistNavState(){
+  try{ await window.storage.set('nav-state', JSON.stringify({activeGroupId: state.activeGroupId, activeId: state.activeId, day: ui.day, subtab: ui.subtab}), false); }catch(e){}
+}
+async function persistGroupsIndex(){ try{ await window.storage.set('groups-index', JSON.stringify(state.groups.map(g=>g.id)), false); }catch(e){} }
+async function persistGroup(group){ try{ await window.storage.set('group:'+group.id, JSON.stringify(group), false); }catch(e){} }
+async function deleteGroupStorage(id){ try{ await window.storage.delete('group:'+id, false); }catch(e){} }
 async function persistIndex(){ try{ await window.storage.set('lines-index', JSON.stringify(state.lines.map(l=>l.id)), false); }catch(e){} }
 async function persistLine(line){ try{ await window.storage.set('line:'+line.id, JSON.stringify(line), false); }catch(e){} }
 async function deleteLineStorage(id){ try{ await window.storage.delete('line:'+id, false); }catch(e){} }
@@ -307,31 +416,106 @@ function lineStatusClass(line){ if(!line.entries.length) return ''; const last=[
 
 /* ---------- Sub tabs ---------- */
 document.querySelectorAll('.subtab').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     ui.subtab = btn.dataset.tab;
     document.querySelectorAll('.subtab').forEach(b=>b.classList.toggle('active', b===btn));
     document.querySelectorAll('.tabpanel').forEach(p=>p.classList.remove('active'));
     document.getElementById('tab-'+ui.subtab).classList.add('active');
+    await persistNavState();
   });
 });
 
-/* ---------- Line tabs ---------- */
+/* ---------- Day picker + Save button ---------- */
+document.getElementById('dayPicker').addEventListener('change', async (e) => {
+  ui.day = e.target.value || new Date().toISOString().slice(0,10);
+  await persistNavState();
+  render();
+});
+document.getElementById('saveBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('saveBtn');
+  btn.textContent = 'Saving…'; btn.disabled = true;
+  try{
+    for(const g of state.groups) await persistGroup(g);
+    await persistGroupsIndex();
+    for(const l of state.lines) await persistLine(l);
+    await persistIndex();
+    await persistNavState();
+    btn.textContent = '✓ Saved'; btn.classList.add('saved');
+  }catch(e){
+    btn.textContent = '✕ Retry';
+  }
+  setTimeout(()=>{ btn.textContent='💾 Save'; btn.disabled=false; btn.classList.remove('saved'); }, 1500);
+});
+
+/* ---------- Group tabs ---------- */
+function renderGroupTabs(){
+  const wrap = document.getElementById('groupTabs');
+  wrap.innerHTML = '';
+  state.groups.forEach(g => {
+    const tab = document.createElement('div');
+    tab.className = 'tab ' + (g.id===state.activeGroupId?'active':'');
+    tab.innerHTML = `${escapeHtml(g.name)}<span class="rm" data-id="${g.id}">✕</span>`;
+    tab.addEventListener('click', async (e) => {
+      if(e.target.classList.contains('rm')) return;
+      state.activeGroupId = g.id;
+      state.activeId = pickFirstLineInGroup(g.id);
+      ui.activeStyleId = activeLine() && activeLine().styles[0] ? activeLine().styles[0].id : null;
+      syncEntryDefaults(); await persistNavState(); render();
+    });
+    tab.querySelector('.rm').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if(state.groups.length===1){ alert("Can't delete the last group."); return; }
+      if(!confirm(`Delete group "${g.name}"? Its lines move to "Ungrouped" — no data is deleted.`)) return;
+      let ungrouped = state.groups.find(x=>x.name==='Ungrouped' && x.id!==g.id);
+      if(!ungrouped){ ungrouped = defaultGroup('Ungrouped', []); state.groups.push(ungrouped); }
+      ungrouped.lineIds.push(...g.lineIds);
+      state.groups = state.groups.filter(x=>x.id!==g.id);
+      await deleteGroupStorage(g.id); await persistGroup(ungrouped); await persistGroupsIndex();
+      if(state.activeGroupId===g.id){ state.activeGroupId = state.groups[0].id; state.activeId = pickFirstLineInGroup(state.activeGroupId); }
+      syncEntryDefaults(); await persistNavState(); render();
+    });
+    wrap.appendChild(tab);
+  });
+  const addBtn = document.createElement('button');
+  addBtn.className='add-line'; addBtn.textContent='+ Add Group';
+  addBtn.addEventListener('click', async () => {
+    const name = prompt('Group name (e.g. Group 1, Group 3):');
+    if(!name || !name.trim()) return;
+    const g = defaultGroup(name.trim(), []);
+    state.groups.push(g);
+    await persistGroup(g); await persistGroupsIndex();
+    state.activeGroupId = g.id; state.activeId = null;
+    syncEntryDefaults(); await persistNavState(); render();
+  });
+  wrap.appendChild(addBtn);
+}
+
+/* ---------- Line tabs (scoped to active group) ---------- */
 function renderTabs(){
   const tabs = document.getElementById('tabs');
   tabs.innerHTML = '';
-  state.lines.forEach(line => {
+  const group = activeGroup();
+  if(!group){ tabs.innerHTML = '<div class="empty-sm">Add a group above to get started.</div>'; return; }
+  const groupLines = state.lines.filter(l => group.lineIds.includes(l.id));
+  groupLines.forEach(line => {
     const tab = document.createElement('div');
     tab.className = 'tab ' + (line.id===state.activeId?'active ':'') + lineStatusClass(line);
     tab.innerHTML = `${escapeHtml(line.name)}<span class="rm" data-id="${line.id}">✕</span>`;
-    tab.addEventListener('click', (e) => { if(e.target.classList.contains('rm')) return; state.activeId=line.id; ui.activeStyleId = line.styles[0]?line.styles[0].id:null; syncEntryDefaults(); render(); });
+    tab.addEventListener('click', async (e) => {
+      if(e.target.classList.contains('rm')) return;
+      state.activeId=line.id; ui.activeStyleId = line.styles[0]?line.styles[0].id:null;
+      syncEntryDefaults(); await persistNavState(); render();
+    });
     tab.querySelector('.rm').addEventListener('click', async (e) => {
       e.stopPropagation();
-      if(state.lines.length===1){ alert("Can't delete the last line."); return; }
+      if(groupLines.length===1){ alert("Can't delete the last line in this group."); return; }
       if(!confirm(`Delete "${line.name}" and all its data?`)) return;
       await deleteLineStorage(line.id);
       state.lines = state.lines.filter(l=>l.id!==line.id);
-      if(state.activeId===line.id) state.activeId = state.lines[0].id;
-      await persistIndex(); syncEntryDefaults(); render();
+      group.lineIds = group.lineIds.filter(id=>id!==line.id);
+      await persistGroup(group); await persistIndex();
+      if(state.activeId===line.id) state.activeId = pickFirstLineInGroup(group.id);
+      syncEntryDefaults(); await persistNavState(); render();
     });
     tabs.appendChild(tab);
   });
@@ -339,8 +523,10 @@ function renderTabs(){
   addBtn.className='add-line'; addBtn.textContent='+ Add Line';
   addBtn.addEventListener('click', async () => {
     const l = defaultLine('Line '+(state.lines.length+1));
-    state.lines.push(l); state.activeId=l.id; ui.activeStyleId=null;
-    await persistLine(l); await persistIndex(); syncEntryDefaults(); render();
+    state.lines.push(l); group.lineIds.push(l.id);
+    state.activeId=l.id; ui.activeStyleId=null;
+    await persistLine(l); await persistIndex(); await persistGroup(group);
+    syncEntryDefaults(); await persistNavState(); render();
   });
   tabs.appendChild(addBtn);
 }
@@ -348,7 +534,12 @@ function renderTabs(){
 /* ---------- Config ---------- */
 function renderConfig(){
   const line = activeLine();
-  document.getElementById('subtitleLine').textContent = `${line.name} — ${line.manpower} operators default · SMV ${line.smv} default`;
+  const group = activeGroup();
+  if(!line){
+    document.getElementById('subtitleLine').textContent = group ? `${group.name} — no lines yet, tap "+ Add Line" above` : '— select or add a group —';
+    return;
+  }
+  document.getElementById('subtitleLine').textContent = `${group?group.name+' · ':''}${line.name} — ${line.manpower} operators default · SMV ${line.smv} default`;
   document.getElementById('cfgName').value = line.name;
   document.getElementById('cfgManpower').value = line.manpower;
   document.getElementById('cfgSmv').value = line.smv;
@@ -356,11 +547,12 @@ function renderConfig(){
 }
 function syncEntryDefaults(){
   const line = activeLine();
-  document.getElementById('eOperators').value = line.manpower;
-  document.getElementById('eSmv').value = line.smv;
+  document.getElementById('eOperators').value = line ? line.manpower : '';
+  document.getElementById('eSmv').value = line ? line.smv : '';
 }
 document.getElementById('saveCfgBtn').addEventListener('click', async () => {
   const line = activeLine();
+  if(!line){ alert('Add a line first.'); return; }
   line.name = document.getElementById('cfgName').value.trim() || line.name;
   line.manpower = parseFloat(document.getElementById('cfgManpower').value) || 0;
   line.smv = parseFloat(document.getElementById('cfgSmv').value) || 0;
@@ -368,9 +560,11 @@ document.getElementById('saveCfgBtn').addEventListener('click', async () => {
 });
 
 /* ---------- Reasons ---------- */
-function reasonList(line){ const merged=[...DEFAULT_REASONS]; line.customReasons.forEach(r=>{ if(!merged.includes(r)) merged.push(r); }); return merged; }
+function reasonList(line){ const merged=[...DEFAULT_REASONS]; (line.customReasons||[]).forEach(r=>{ if(!merged.includes(r)) merged.push(r); }); return merged; }
 function populateReasonSelect(selectedVal){
-  const line = activeLine(); const sel = document.getElementById('eReason'); const list = reasonList(line);
+  const line = activeLine(); const sel = document.getElementById('eReason');
+  if(!line){ sel.innerHTML = '<option value="">— none —</option>'; return; }
+  const list = reasonList(line);
   sel.innerHTML = '<option value="">— none —</option>' + list.map(r=>`<option${r===selectedVal?' selected':''}>${escapeHtml(r)}</option>`).join('');
 }
 document.getElementById('newReasonToggle').addEventListener('click', () => { document.getElementById('newReasonBox').classList.toggle('show'); document.getElementById('newReasonInput').focus(); });
@@ -387,7 +581,8 @@ function calcFields(target,actual,lostPieces,logTime,operators,smv){
   const downtime = lostPieces*smv;
   const effSmv = (logTime&&operators) ? (actual*smv)/(logTime*operators)*100 : null;
   const effTarget = target>0 ? (actual/target)*100 : null;
-  return {lostMinutes,downtime,effSmv,effTarget};
+  const fttPct = actual>0 ? Math.max(0, Math.min(100, ((actual-lostPieces)/actual)*100)) : null;
+  return {lostMinutes,downtime,effSmv,effTarget,fttPct};
 }
 function updateLostPieces(){
   const target=parseFloat(document.getElementById('eTarget').value)||0;
@@ -397,26 +592,29 @@ function updateLostPieces(){
   return lostPieces;
 }
 function updatePreview(){
+  const line = activeLine();
   const target=parseFloat(document.getElementById('eTarget').value)||0;
   const actual=parseFloat(document.getElementById('eActual').value)||0;
   const lostPieces = updateLostPieces();
   const logTime=parseFloat(document.getElementById('eLogTime').value)||0;
   const operators=parseFloat(document.getElementById('eOperators').value)||0;
   const smv=parseFloat(document.getElementById('eSmv').value)||0;
-  const {lostMinutes,downtime,effSmv,effTarget} = calcFields(target,actual,lostPieces,logTime,operators,smv);
+  const {lostMinutes,downtime,effSmv,effTarget,fttPct} = calcFields(target,actual,lostPieces,logTime,operators,smv);
   const noLoss = lostPieces===0 && (target>0||actual>0);
   document.getElementById('preview').innerHTML = `
     ${noLoss ? `<span style="color:var(--teal);">✓ Target met — no loss this hour</span>` : `
     <span>Lost Min: <b>${lostMinutes.toFixed(1)}</b></span><span>Downtime: <b>${downtime.toFixed(1)} min</b></span>`}
     <span>Eff (SMV): <b>${effSmv!==null?effSmv.toFixed(1)+'%':'—'}</b></span>
-    <span>Eff (Target): <b>${effTarget!==null?effTarget.toFixed(1)+'%':'—'}</b></span>`;
+    <span>Eff (Target): <b>${effTarget!==null?effTarget.toFixed(1)+'%':'—'}</b></span>
+    <span>FTT%: <b>${fttPct!==null?fttPct.toFixed(1)+'%':'—'}</b></span>`;
 }
 document.querySelectorAll('.quickset button').forEach(btn => btn.addEventListener('click', () => { document.getElementById('eLogTime').value = btn.dataset.val; updatePreview(); }));
 ['eTarget','eActual','eLogTime','eOperators','eSmv'].forEach(id => document.getElementById(id).addEventListener('input', updatePreview));
 
 document.getElementById('addEntryBtn').addEventListener('click', async () => {
   const line = activeLine();
-  const date = document.getElementById('eDate').value || new Date().toISOString().slice(0,10);
+  if(!line){ alert('Add a line first.'); return; }
+  const date = ui.day;
   const time = document.getElementById('eTime').value;
   const logTime = parseFloat(document.getElementById('eLogTime').value)||60;
   const operators = parseFloat(document.getElementById('eOperators').value)||0;
@@ -428,8 +626,8 @@ document.getElementById('addEntryBtn').addEventListener('click', async () => {
   const notes = document.getElementById('eNotes').value.trim();
   if(!target && !actual){ alert('Enter at least a target or actual production value.'); return; }
   if(!time){ alert('Enter the time for this hourly log.'); return; }
-  const {lostMinutes,downtime,effSmv,effTarget} = calcFields(target,actual,lostPieces,logTime,operators,smv);
-  const entry = { id:uid('E'), date,time,logTime,operators,smv,target,actual,lostPieces,lostMinutes,downtime,reason,notes,effSmv,effTarget,createdAt:Date.now() };
+  const {lostMinutes,downtime,effSmv,effTarget,fttPct} = calcFields(target,actual,lostPieces,logTime,operators,smv);
+  const entry = { id:uid('E'), date,time,logTime,operators,smv,target,actual,lostPieces,lostMinutes,downtime,reason,notes,effSmv,effTarget,fttPct,createdAt:Date.now() };
   line.entries.push(entry);
   await persistLine(line);
   ['eTarget','eActual','eNotes'].forEach(id=>document.getElementById(id).value='');
@@ -443,18 +641,22 @@ document.getElementById('addEntryBtn').addEventListener('click', async () => {
 
 /* ---------- Dashboard ---------- */
 function renderSummary(){
-  const line = activeLine(); const entries = line.entries; const summary = document.getElementById('summary');
+  const line = activeLine(); const summary = document.getElementById('summary');
+  if(!line){ summary.innerHTML=''; return; }
+  const entries = dayEntries(line);
   if(!entries.length){ summary.innerHTML=''; return; }
   const totalTarget=entries.reduce((s,e)=>s+e.target,0), totalActual=entries.reduce((s,e)=>s+e.actual,0);
   const totalLostPieces=entries.reduce((s,e)=>s+e.lostPieces,0), totalLostMin=entries.reduce((s,e)=>s+e.lostMinutes,0), totalDowntime=entries.reduce((s,e)=>s+e.downtime,0);
-  const validSmv=entries.filter(e=>e.effSmv!==null), validTgt=entries.filter(e=>e.effTarget!==null);
+  const validSmv=entries.filter(e=>e.effSmv!==null), validTgt=entries.filter(e=>e.effTarget!==null), validFtt=entries.filter(e=>e.fttPct!==null&&e.fttPct!==undefined);
   const avgSmv = validSmv.length ? validSmv.reduce((s,e)=>s+e.effSmv,0)/validSmv.length : null;
   const avgTgt = validTgt.length ? validTgt.reduce((s,e)=>s+e.effTarget,0)/validTgt.length : null;
+  const avgFtt = validFtt.length ? validFtt.reduce((s,e)=>s+e.fttPct,0)/validFtt.length : null;
   const cards = [
     ['Total Target', totalTarget.toLocaleString(), ''],
     ['Total Actual', totalActual.toLocaleString(), ''],
     ['Avg Eff. (SMV)', avgSmv!==null?avgSmv.toFixed(1)+'%':'—', effColor(avgSmv)],
     ['Avg Eff. (Target)', avgTgt!==null?avgTgt.toFixed(1)+'%':'—', effColor(avgTgt)],
+    ['Avg FTT%', avgFtt!==null?avgFtt.toFixed(1)+'%':'—', effColor(avgFtt)],
     ['Lost Pieces', totalLostPieces.toLocaleString(), totalLostPieces>0?'bad':''],
     ['Lost Minutes', totalLostMin.toFixed(0), totalLostMin>0?'bad':''],
     ['Downtime (min)', totalDowntime.toFixed(0), totalDowntime>0?'bad':''],
@@ -463,7 +665,8 @@ function renderSummary(){
 }
 function renderDowntime(){
   const line = activeLine(); const dtPanel = document.getElementById('dtPanel');
-  const withReason = line.entries.filter(e=>e.reason && e.downtime>0);
+  if(!line){ dtPanel.style.display='none'; document.getElementById('dtBreakdown').innerHTML=''; return; }
+  const withReason = dayEntries(line).filter(e=>e.reason && e.downtime>0);
   if(!withReason.length){ dtPanel.style.display='none'; document.getElementById('dtBreakdown').innerHTML=''; return; }
   dtPanel.style.display='block';
   const totals={}; withReason.forEach(e=>{ totals[e.reason]=(totals[e.reason]||0)+e.downtime; });
@@ -473,9 +676,10 @@ function renderDowntime(){
 }
 function renderRecent(){
   const line = activeLine();
-  const sorted = [...line.entries].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)||b.createdAt-a.createdAt).slice(0,5);
   const list = document.getElementById('recentList');
-  if(!sorted.length){ list.innerHTML = '<div class="empty-sm">No entries yet.</div>'; return; }
+  if(!line){ list.innerHTML = '<div class="empty-sm">No lines in this group yet.</div>'; return; }
+  const sorted = dayEntries(line).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)||b.createdAt-a.createdAt).slice(0,5);
+  if(!sorted.length){ list.innerHTML = '<div class="empty-sm">No entries for this day yet.</div>'; return; }
   list.innerHTML = sorted.map(e => `
     <div class="entry-card" style="padding:8px 4px;">
       <div class="ec-top" style="margin-bottom:2px;">
@@ -487,11 +691,85 @@ function renderRecent(){
 }
 
 /* ---------- Full log ---------- */
+function catmullRomPath(pts){
+  if(pts.length<2) return '';
+  if(pts.length===2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for(let i=0;i<pts.length-1;i++){
+    const p0 = pts[i-1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i+1];
+    const p3 = pts[i+2] || p2;
+    const cp1x = p1.x + (p2.x-p0.x)/6, cp1y = p1.y + (p2.y-p0.y)/6;
+    const cp2x = p2.x - (p3.x-p1.x)/6, cp2y = p2.y - (p3.y-p1.y)/6;
+    d += ` C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}, ${cp2x.toFixed(2)} ${cp2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+  }
+  return d;
+}
+
+function renderChart(){
+  const line = activeLine();
+  const container = document.getElementById('outputChart');
+  const hint = document.getElementById('chartHint');
+  if(!line){ container.innerHTML=''; hint.textContent=''; return; }
+  const entries = dayEntries(line).slice().sort((a,b)=>a.time.localeCompare(b.time));
+  if(entries.length<2){
+    container.innerHTML = `<div class="empty-sm">Need at least 2 entries on ${ui.day} to plot a curve.</div>`;
+    hint.textContent = '';
+    return;
+  }
+  hint.textContent = `${entries.length} points — ${ui.day}`;
+
+  const W=600, H=220, padL=38, padR=12, padT=12, padB=26;
+  const innerW = W-padL-padR, innerH = H-padT-padB;
+  const maxVal = Math.max(1, ...entries.map(e=>Math.max(e.target,e.actual)));
+  const n = entries.length;
+  const xFor = i => padL + (n===1 ? innerW/2 : innerW*i/(n-1));
+  const yFor = v => padT + innerH - (v/maxVal)*innerH;
+
+  const actualPts = entries.map((e,i)=>({x:xFor(i), y:yFor(e.actual)}));
+  const targetPts = entries.map((e,i)=>({x:xFor(i), y:yFor(e.target)}));
+  const actualPath = catmullRomPath(actualPts);
+  const targetPath = catmullRomPath(targetPts);
+
+  const gridLines = [0,0.5,1].map(f => {
+    const y = padT + innerH*(1-f);
+    const val = Math.round(maxVal*f);
+    return `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="var(--border)" stroke-width="1"/>
+      <text x="${padL-6}" y="${y+3}" text-anchor="end" font-size="9" fill="var(--text-dim)" font-family="IBM Plex Mono, monospace">${val}</text>`;
+  }).join('');
+
+  const step = Math.max(1, Math.ceil(n/8));
+  const xLabels = entries.map((e,i)=> (i%step===0 || i===n-1)
+    ? `<text x="${xFor(i)}" y="${H-8}" text-anchor="middle" font-size="9" fill="var(--text-dim)" font-family="IBM Plex Mono, monospace">${e.time}</text>` : '').join('');
+
+  const dots = actualPts.map((p,i) => {
+    const e = entries[i];
+    const tier = effColor(e.effTarget);
+    const c = tier==='good' ? 'var(--teal)' : tier==='warn' ? 'var(--amber)' : tier==='bad' ? 'var(--rust)' : 'var(--text-dim)';
+    return `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="3.2" fill="${c}" stroke="var(--panel)" stroke-width="1.5"><title>${e.time} — Actual ${e.actual}, Target ${e.target}</title></circle>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="chart-legend">
+      <span><span class="dot" style="background:var(--teal);"></span>Actual pcs</span>
+      <span><span class="dot" style="background:var(--text-dim);opacity:.6;"></span>Target pcs (dashed)</span>
+    </div>
+    <svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+      ${gridLines}
+      <path d="${targetPath}" fill="none" stroke="var(--text-dim)" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6"/>
+      <path d="${actualPath}" fill="none" stroke="var(--teal)" stroke-width="2.5"/>
+      ${dots}
+      ${xLabels}
+    </svg>`;
+}
+
 function renderLog(){
   const line = activeLine(); const list = document.getElementById('logList'); const empty = document.getElementById('emptyMsg');
-  const sorted = [...line.entries].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)||b.createdAt-a.createdAt);
-  document.getElementById('entryCount').textContent = `${line.entries.length} entr${line.entries.length===1?'y':'ies'}`;
-  if(!sorted.length){ list.innerHTML=''; empty.style.display='block'; return; }
+  if(!line){ list.innerHTML=''; document.getElementById('entryCount').textContent=''; empty.style.display='block'; empty.textContent='Add a line in this group to start logging.'; return; }
+  const sorted = dayEntries(line).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)||b.createdAt-a.createdAt);
+  document.getElementById('entryCount').textContent = `${sorted.length} entr${sorted.length===1?'y':'ies'} on ${ui.day} · ${line.entries.length} total for this line`;
+  if(!sorted.length){ list.innerHTML=''; empty.style.display='block'; empty.textContent='No entries for this day yet — add your first hour above.'; return; }
   empty.style.display='none';
   list.innerHTML = sorted.map(e => `
     <div class="entry-card">
@@ -512,6 +790,7 @@ function renderLog(){
         <div class="ec-metric"><div class="l">Lost Min</div><div class="v">${e.lostMinutes>0?e.lostMinutes.toFixed(1):'—'}</div></div>
         <div class="ec-metric"><div class="l">Downtime</div><div class="v">${e.downtime>0?e.downtime.toFixed(1):'—'}</div></div>
         <div class="ec-metric"><div class="l">Ops / SMV</div><div class="v">${e.operators}/${e.smv}</div></div>
+        <div class="ec-metric"><div class="l">FTT%</div><div class="v">${e.fttPct!==null&&e.fttPct!==undefined?e.fttPct.toFixed(1)+'%':'—'}</div></div>
       </div>
       ${e.reason?`<div class="ec-reason">⚠ ${escapeHtml(e.reason)}</div>`:''}
       ${e.notes?`<div class="ec-notes">${escapeHtml(e.notes)}</div>`:''}
@@ -524,12 +803,13 @@ function renderLog(){
 
 document.getElementById('exportBtn').addEventListener('click', () => {
   const line = activeLine();
-  if(!line.entries.length){ alert('No entries to export yet.'); return; }
-  const headers = ['Date','Time','Log Time (min)','Operators','SMV','Target','Actual','Lost Pieces','Lost Minutes','Downtime (min)','Reason','Notes','Eff SMV %','Eff Target %'];
+  if(!line || !line.entries.length){ alert('No entries to export yet.'); return; }
+  const headers = ['Date','Time','Log Time (min)','Operators','SMV','Target','Actual','Lost Pieces','Lost Minutes','Downtime (min)','Reason','Notes','Eff SMV %','Eff Target %','FTT %'];
   const rows = [...line.entries].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(e => [
     e.date,e.time,e.logTime,e.operators,e.smv,e.target,e.actual,e.lostPieces,e.lostMinutes.toFixed(2),e.downtime.toFixed(2),
     `"${(e.reason||'').replace(/"/g,'""')}"`,`"${(e.notes||'').replace(/"/g,'""')}"`,
-    e.effSmv!==null?e.effSmv.toFixed(2):'', e.effTarget!==null?e.effTarget.toFixed(2):''
+    e.effSmv!==null?e.effSmv.toFixed(2):'', e.effTarget!==null?e.effTarget.toFixed(2):'',
+    (e.fttPct!==null&&e.fttPct!==undefined)?e.fttPct.toFixed(2):''
   ]);
   const csv = [headers.join(','), ...rows.map(r=>r.join(','))].join('\n');
   const blob = new Blob([csv],{type:'text/csv'}); const url = URL.createObjectURL(blob);
@@ -537,11 +817,12 @@ document.getElementById('exportBtn').addEventListener('click', () => {
 });
 
 /* ================= TIME STUDY ================= */
-function activeStyle(){ const line = activeLine(); return line.styles.find(s=>s.id===ui.activeStyleId); }
+function activeStyle(){ const line = activeLine(); return line ? line.styles.find(s=>s.id===ui.activeStyleId) : null; }
 
 function renderTimeStudy(){
   const line = activeLine();
   const styleTabs = document.getElementById('styleTabs');
+  if(!line){ styleTabs.innerHTML=''; document.getElementById('styleContent').innerHTML = '<div class="empty">Add a line in this group first.</div>'; return; }
   if(!line.styles.length){ ui.activeStyleId = null; }
   else if(!line.styles.find(s=>s.id===ui.activeStyleId)){ ui.activeStyleId = line.styles[0].id; }
 
@@ -752,12 +1033,21 @@ function stopTimerSession(){
 
 /* ---------- Master render ---------- */
 function render(){
-  renderTabs(); renderConfig(); renderSummary(); renderDowntime(); renderRecent(); renderLog(); updatePreview(); renderTimeStudy();
+  document.getElementById('dayPicker').value = ui.day;
+  document.querySelectorAll('.subtab').forEach(b=>b.classList.toggle('active', b.dataset.tab===ui.subtab));
+  document.querySelectorAll('.tabpanel').forEach(p=>p.classList.toggle('active', p.id==='tab-'+ui.subtab));
+  renderGroupTabs(); renderTabs(); renderConfig(); renderSummary(); renderDowntime(); renderRecent(); renderLog(); renderChart(); updatePreview(); renderTimeStudy();
 }
 
-document.getElementById('eDate').value = new Date().toISOString().slice(0,10);
 document.getElementById('eTime').value = '08:00';
 loadState();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(e => console.warn('SW registration failed', e));
+  });
+}
+
 </script>
 </body>
 </html>
